@@ -3,15 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
-import { authenticate, requireRole } from './middlewares/authMiddleware';
-import { JWTPayload } from './types/auth';
-
-// Extend Express Request type locally
-declare module 'express-serve-static-core' {
-  interface Request {
-    user?: JWTPayload;
-  }
-}
+import authRoutes from './routes/authRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -34,6 +26,8 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', message: 'Server is running' });
 });
 
+// Routes
+app.use('/api/auth', authRoutes);
 
 // Error handler middleware - must be last
 app.use(errorHandler);

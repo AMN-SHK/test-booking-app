@@ -1,18 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/auth';
 import { ApiError } from './errorHandler';
-import { JWTPayload } from '../types/auth';
-
-// Extend Express Request type
-declare module 'express-serve-static-core' {
-  interface Request {
-    user?: JWTPayload;
-  }
-}
 
 /**
- * Authenticate middleware - checks for valid JWT token
+ * Authenticate user via JWT token
  * Extracts Bearer token from Authorization header
+ * Attaches user payload to req.user
  */
 export const authenticate = (
   req: Request,
@@ -22,24 +15,25 @@ export const authenticate = (
   try {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader) {
       throw new ApiError('No token provided', 401);
     }
 
-    // get the token part after "Bearer "
-    const token = authHeader.split(' ')[1];
-
-    if (!token) {
-      throw new ApiError('No token provided', 401);
+    // check for Bearer format
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      throw new ApiError('Token format invalid. Use: Bearer <token>', 401);
     }
+
+    const token = parts[1];
 
     // verify and decode token
     const decoded = verifyToken(token);
     
-    // attach user info to request
+    // attach user to request
     req.user = decoded;
     
-    // console.log('user authenticated:', decoded.userId);
+    // console.log('User authenticated:', decoded.userId);
     
     next();
   } catch (error) {
@@ -52,7 +46,7 @@ export const authenticate = (
 };
 
 /**
- * Role-based authorization middleware
+ * Check if user has required role(s)
  * Must be used after authenticate middleware
  */
 export const requireRole = (...roles: Array<'user' | 'admin'>) => {
