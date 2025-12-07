@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { ZodError } from 'zod';
+import { ConflictError, ValidationError, NotFoundError } from '../utils/errors';
+import { ConflictingBooking } from '../types/booking';
 
 interface ErrorResponse {
   success: false;
@@ -8,7 +10,14 @@ interface ErrorResponse {
   details?: Record<string, string[]> | string[];
 }
 
-// custom error class for api errors
+interface ConflictErrorResponse {
+  success: false;
+  conflict: true;
+  error: string;
+  conflictingBookings: ConflictingBooking[];
+}
+
+// custom error class for api errors (keep for backwards compat)
 export class ApiError extends Error {
   statusCode: number;
   
@@ -28,13 +37,36 @@ export const errorHandler = (
   console.error('Error:', err.message); // keep this for debugging
   
   let statusCode = 500;
-  let response: ErrorResponse = {
+  let response: ErrorResponse | ConflictErrorResponse = {
     success: false,
     error: 'Internal server error',
   };
 
+  // handle conflict errors (booking overlaps)
+  if (err instanceof ConflictError) {
+    statusCode = err.statusCode;
+    response = {
+      success: false,
+      conflict: true,
+      error: err.message,
+      conflictingBookings: err.conflictingBookings,
+    };
+  }
+
+  // handle validation errors from our custom class
+  else if (err instanceof ValidationError) {
+    statusCode = err.statusCode;
+    response.error = err.message;
+  }
+
+  // handle not found errors
+  else if (err instanceof NotFoundError) {
+    statusCode = err.statusCode;
+    response.error = err.message;
+  }
+
   // handle our custom api errors
-  if (err instanceof ApiError) {
+  else if (err instanceof ApiError) {
     statusCode = err.statusCode;
     response.error = err.message;
   }
@@ -52,7 +84,7 @@ export const errorHandler = (
       }
       details[path].push(issue.message);
     });
-    response.details = details;
+    (response as ErrorResponse).details = details;
   }
   
   // handle mongoose validation errors
@@ -64,7 +96,7 @@ export const errorHandler = (
     Object.keys(err.errors).forEach((key) => {
       details[key] = [err.errors[key].message];
     });
-    response.details = details;
+    (response as ErrorResponse).details = details;
   }
   
   // handle mongoose duplicate key error
@@ -98,4 +130,3 @@ export const errorHandler = (
 
   res.status(statusCode).json(response);
 };
-
