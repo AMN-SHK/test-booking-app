@@ -1,6 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/auth';
 import { ApiError } from './errorHandler';
+import { JWTPayload } from '../types/auth';
+
+// extend express Request type
+interface AuthRequest extends Request {
+  user?: JWTPayload;
+}
 
 /**
  * Authenticate user via JWT token
@@ -8,7 +14,7 @@ import { ApiError } from './errorHandler';
  * Attaches user payload to req.user
  */
 export const authenticate = (
-  req: Request,
+  req: AuthRequest,
   _res: Response,
   next: NextFunction
 ): void => {
@@ -50,7 +56,7 @@ export const authenticate = (
  * Must be used after authenticate middleware
  */
 export const requireRole = (...roles: Array<'user' | 'admin'>) => {
-  return (req: Request, _res: Response, next: NextFunction): void => {
+  return (req: AuthRequest, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       return next(new ApiError('Authentication required', 401));
     }
@@ -62,4 +68,7 @@ export const requireRole = (...roles: Array<'user' | 'admin'>) => {
     next();
   };
 };
+
+// export the extended request type for use in other files
+export type { AuthRequest };
 
