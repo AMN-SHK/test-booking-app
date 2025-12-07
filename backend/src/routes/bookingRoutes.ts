@@ -6,9 +6,13 @@ import {
   getUserBookingsHandler,
   getAllBookingsHandler
 } from '../controllers/bookingController';
+import { streamBookings } from '../controllers/sseController';
 import { authenticate, requireRole } from '../middlewares/authMiddleware';
 
 const router = Router();
+
+// GET /api/bookings/stream - SSE stream for real-time updates (public, but can be authenticated)
+router.get('/stream', streamBookings);
 
 // POST /api/bookings - create booking (authenticated users)
 router.post('/', authenticate, createBookingHandler);

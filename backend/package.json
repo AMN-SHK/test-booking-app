@@ -8,7 +8,8 @@
     "start": "node dist/server.js",
     "seed": "ts-node src/utils/seed.ts",
     "test": "ts-node src/utils/test-booking.ts",
-    "test:booking": "ts-node src/utils/test-booking.ts"
+    "test:booking": "ts-node src/utils/test-booking.ts",
+    "test:sse": "ts-node src/utils/test-availability-sse.ts"
   },
   "keywords": [],
   "author": "",

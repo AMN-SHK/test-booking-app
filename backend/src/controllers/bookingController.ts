@@ -8,6 +8,7 @@ import {
   getAllBookingsGroupedByRoom 
 } from '../services/bookingService';
 import { AuthRequest } from '../middlewares/authMiddleware';
+import { broadcast, SSEBookingData } from '../services/sseService';
 
 /**
  * Create a new booking
@@ -26,6 +27,18 @@ export const createBookingHandler = async (
     const userId = req.user!.userId;
 
     const booking = await createBooking(userId, roomId, startTime, endTime);
+
+    // broadcast to SSE clients
+    const sseData: SSEBookingData = {
+      bookingId: booking.id,
+      roomId: booking.roomId,
+      roomName: booking.roomName,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      userId: booking.userId,
+      userName: booking.userName,
+    };
+    broadcast('booking-created', sseData);
 
     res.status(201).json({
       success: true,
@@ -55,6 +68,18 @@ export const rescheduleBookingHandler = async (
 
     const booking = await rescheduleBooking(id, userId, userRole, startTime, endTime);
 
+    // broadcast to SSE clients
+    const sseData: SSEBookingData = {
+      bookingId: booking.id,
+      roomId: booking.roomId,
+      roomName: booking.roomName,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      userId: booking.userId,
+      userName: booking.userName,
+    };
+    broadcast('booking-rescheduled', sseData);
+
     res.status(200).json({
       success: true,
       message: 'Booking rescheduled successfully',
@@ -80,6 +105,18 @@ export const cancelBookingHandler = async (
     const userRole = req.user!.role;
 
     const booking = await cancelBooking(id, userId, userRole);
+
+    // broadcast to SSE clients
+    const sseData: SSEBookingData = {
+      bookingId: booking.id,
+      roomId: booking.roomId,
+      roomName: booking.roomName,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      userId: booking.userId,
+      userName: booking.userName,
+    };
+    broadcast('booking-cancelled', sseData);
 
     res.status(200).json({
       success: true,
