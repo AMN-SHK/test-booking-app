@@ -5,7 +5,7 @@ import connectDB from './config/database';
 import { errorHandler } from './middlewares/errorHandler';
 import authRoutes from './routes/authRoutes';
 import roomRoutes from './routes/roomRoutes';
-import bookingRoutes from './routes/bookingRoutes';
+import bookingRoutes, { adminBookingRoutes } from './routes/bookingRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -32,6 +32,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/admin', adminBookingRoutes);
 
 // Error handler middleware - must be last
 app.use(errorHandler);

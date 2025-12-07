@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import Booking, { IBooking } from '../models/Booking';
 import Room from '../models/Room';
-import User from '../models/User';
-import { BookingResponse, ConflictingBooking } from '../types/booking';
+import { BookingResponse, ConflictingBooking, BookingsByRoom } from '../types/booking';
 import { ConflictError, ValidationError, NotFoundError } from '../utils/errors';
+import { ApiError } from '../middlewares/errorHandler';
 
 /**
  * Convert booking document to response DTO
@@ -154,3 +154,196 @@ export const createBooking = async (
   });
 };
 
+/**
+ * Reschedule an existing booking
+ * Only owner or admin can reschedule
+ */
+export const rescheduleBooking = async (
+  bookingId: string,
+  userId: string,
+  userRole: 'user' | 'admin',
+  newStartTime: Date,
+  newEndTime: Date
+): Promise<BookingResponse> => {
+  // find the booking
+  const booking = await Booking.findById(bookingId);
+  
+  if (!booking) {
+    throw new NotFoundError('Booking not found');
+  }
+
+  // check if cancelled
+  if (booking.status === 'cancelled') {
+    throw new ValidationError('Cannot reschedule a cancelled booking');
+  }
+
+  // verify ownership or admin
+  const isOwner = booking.userId.toString() === userId;
+  const isAdmin = userRole === 'admin';
+  
+  if (!isOwner && !isAdmin) {
+    throw new ApiError('You do not have permission to reschedule this booking', 403);
+  }
+
+  // validate new times
+  validateBookingTime(newStartTime, newEndTime);
+
+  // check for conflicts (excluding this booking)
+  const conflicts = await checkConflicts(
+    booking.roomId.toString(),
+    newStartTime,
+    newEndTime,
+    bookingId
+  );
+
+  if (conflicts.length > 0) {
+    throw new ConflictError(
+      'The new time slot conflicts with existing booking(s)',
+      conflicts
+    );
+  }
+
+  // update the booking
+  booking.startTime = newStartTime;
+  booking.endTime = newEndTime;
+  await booking.save();
+
+  // fetch with populated data
+  const populatedBooking = await Booking.findById(booking._id)
+    .populate('roomId', 'name')
+    .populate('userId', 'name')
+    .lean();
+
+  if (!populatedBooking) {
+    throw new Error('Failed to fetch updated booking');
+  }
+
+  console.log('Booking rescheduled:', booking._id);
+
+  return toBookingResponse(populatedBooking as unknown as IBooking & {
+    roomId: { _id: mongoose.Types.ObjectId; name: string };
+    userId: { _id: mongoose.Types.ObjectId; name: string };
+  });
+};
+
+/**
+ * Cancel a booking
+ * Only owner or admin can cancel
+ */
+export const cancelBooking = async (
+  bookingId: string,
+  userId: string,
+  userRole: 'user' | 'admin'
+): Promise<BookingResponse> => {
+  // find the booking
+  const booking = await Booking.findById(bookingId);
+  
+  if (!booking) {
+    throw new NotFoundError('Booking not found');
+  }
+
+  // check if already cancelled
+  if (booking.status === 'cancelled') {
+    throw new ValidationError('Booking is already cancelled');
+  }
+
+  // verify ownership or admin
+  const isOwner = booking.userId.toString() === userId;
+  const isAdmin = userRole === 'admin';
+  
+  if (!isOwner && !isAdmin) {
+    throw new ApiError('You do not have permission to cancel this booking', 403);
+  }
+
+  // update status
+  booking.status = 'cancelled';
+  await booking.save();
+
+  // fetch with populated data
+  const populatedBooking = await Booking.findById(booking._id)
+    .populate('roomId', 'name')
+    .populate('userId', 'name')
+    .lean();
+
+  if (!populatedBooking) {
+    throw new Error('Failed to fetch updated booking');
+  }
+
+  console.log('Booking cancelled:', booking._id);
+
+  return toBookingResponse(populatedBooking as unknown as IBooking & {
+    roomId: { _id: mongoose.Types.ObjectId; name: string };
+    userId: { _id: mongoose.Types.ObjectId; name: string };
+  });
+};
+
+/**
+ * Get all bookings for a user
+ * Returns both active and cancelled, sorted by startTime desc
+ */
+export const getUserBookings = async (userId: string): Promise<BookingResponse[]> => {
+  const bookings = await Booking.find({ userId: new mongoose.Types.ObjectId(userId) })
+    .populate('roomId', 'name')
+    .populate('userId', 'name')
+    .sort({ startTime: -1 })
+    .lean();
+
+  return bookings.map((b) => toBookingResponse(b as unknown as IBooking & {
+    roomId: { _id: mongoose.Types.ObjectId; name: string };
+    userId: { _id: mongoose.Types.ObjectId; name: string };
+  }));
+};
+
+/**
+ * Get all active bookings grouped by room
+ * For admin dashboard
+ */
+export const getAllBookingsGroupedByRoom = async (): Promise<BookingsByRoom[]> => {
+  // get all active bookings
+  const bookings = await Booking.find({ status: 'active' })
+    .populate('roomId', 'name')
+    .populate('userId', 'name')
+    .sort({ startTime: 1 })
+    .lean();
+
+  // if no bookings, return empty array
+  if (!bookings || bookings.length === 0) {
+    return [];
+  }
+
+  // group by room
+  const grouped: Map<string, BookingsByRoom> = new Map();
+
+  for (const booking of bookings) {
+    // skip if room was deleted or not populated
+    if (!booking.roomId || typeof booking.roomId !== 'object') {
+      continue;
+    }
+
+    const room = booking.roomId as unknown as { _id: mongoose.Types.ObjectId; name: string };
+    
+    // safety check
+    if (!room._id) {
+      continue;
+    }
+
+    const roomIdStr = room._id.toString();
+
+    if (!grouped.has(roomIdStr)) {
+      grouped.set(roomIdStr, {
+        roomId: roomIdStr,
+        roomName: room.name || 'Unknown Room',
+        bookings: [],
+      });
+    }
+
+    const bookingResponse = toBookingResponse(booking as unknown as IBooking & {
+      roomId: { _id: mongoose.Types.ObjectId; name: string };
+      userId: { _id: mongoose.Types.ObjectId; name: string };
+    });
+
+    grouped.get(roomIdStr)!.bookings.push(bookingResponse);
+  }
+
+  return Array.from(grouped.values());
+};
